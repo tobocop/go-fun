@@ -1,36 +1,77 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 )
 
 func main() {
-	searchTerm := os.Args[1:]
+	searchTerm := url.QueryEscape(strings.Join(os.Args[1:], ""))
+
 	bingResults := make(chan *http.Response)
 	googleResults := make(chan *http.Response)
+	errors := make(chan error)
+
+	cx, cancel := context.WithCancel(context.Background())
+	bingReq, err := http.NewRequestWithContext(cx, http.MethodGet, fmt.Sprintf("https://www.bing.com/search?q=%s", searchTerm), nil)
+	if err != nil {
+		fmt.Printf("Error creating bing request. Err: %v", err)
+		os.Exit(1)
+	}
+
+	googleRequest, err := http.NewRequestWithContext(cx, http.MethodGet, fmt.Sprintf("https://www.google.com/search?q=%s", searchTerm), nil)
+	if err != nil {
+		fmt.Printf("Error creating google request. Err: %v", err)
+		os.Exit(1)
+	}
 
 	go func() {
-		bing, _ := http.Get(fmt.Sprintf("https://www.bing.com/search?q=%s", searchTerm))
-		bingResults <- bing
+		res, err := http.DefaultClient.Do(bingReq)
+		if err != nil {
+			errors <- err
+		}
+		bingResults <- res
 	}()
 	go func() {
-		google, _ := http.Get(fmt.Sprintf("https://www.google.com/search?q=%s", searchTerm))
-		googleResults <- google
+		res, err := http.DefaultClient.Do(googleRequest)
+		if err != nil {
+			errors <- err
+		}
+		googleResults <- res
 	}()
 
 	select {
 	case res := <-bingResults:
-		outputWinner("Bing", res)
+		cancel()
+		defer res.Body.Close()
+		err := outputWinner("Bing", res)
+		if err != nil {
+			fmt.Printf("Error outputting winner. Error %v", err)
+		}
 	case res := <-googleResults:
-		outputWinner("Google", res)
+		cancel()
+		defer res.Body.Close()
+		err := outputWinner("Google", res)
+		if err != nil {
+			fmt.Printf("Error outputting winner. Error %v", err)
+		}
+	case <-errors:
+		cancel()
+		fmt.Println("One call errored, results irrelevant")
 	}
 }
 
-func outputWinner(winner string, res *http.Response) {
-	body, _ := ioutil.ReadAll(res.Body)
-	fmt.Println(string(body[:200]))
+func outputWinner(winner string, res *http.Response) error {
+	body := make([]byte, 100)
+	_, err := res.Body.Read(body)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(body))
 	fmt.Printf("\n%s won\n", winner)
+	return nil
 }
