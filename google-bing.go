@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+const  (
+	BingBaseUrl = "https://www.bing.com/search?q="
+	GoogleBaseUrl = "https://www.google.com/search?q="
+)
+
 func main() {
 	searchTerm := url.QueryEscape(strings.Join(os.Args[1:], ""))
 
@@ -17,13 +22,13 @@ func main() {
 	errors := make(chan error)
 
 	cx, cancel := context.WithCancel(context.Background())
-	bingReq, err := http.NewRequestWithContext(cx, http.MethodGet, fmt.Sprintf("https://www.bing.com/search?q=%s", searchTerm), nil)
+	bingReq, err := http.NewRequestWithContext(cx, http.MethodGet, fmt.Sprintf("%s%s", BingBaseUrl, searchTerm), nil)
 	if err != nil {
 		fmt.Printf("Error creating bing request. Err: %v", err)
 		os.Exit(1)
 	}
 
-	googleRequest, err := http.NewRequestWithContext(cx, http.MethodGet, fmt.Sprintf("https://www.google.com/search?q=%s", searchTerm), nil)
+	googleRequest, err := http.NewRequestWithContext(cx, http.MethodGet, fmt.Sprintf("%s%s", GoogleBaseUrl, searchTerm), nil)
 	if err != nil {
 		fmt.Printf("Error creating google request. Err: %v", err)
 		os.Exit(1)
@@ -51,6 +56,7 @@ func main() {
 		err := outputWinner("Bing", res)
 		if err != nil {
 			fmt.Printf("Error outputting winner. Error %v", err)
+			os.Exit(1)
 		}
 	case res := <-googleResults:
 		cancel()
@@ -58,10 +64,12 @@ func main() {
 		err := outputWinner("Google", res)
 		if err != nil {
 			fmt.Printf("Error outputting winner. Error %v", err)
+			os.Exit(1)
 		}
 	case <-errors:
 		cancel()
 		fmt.Println("One call errored, results irrelevant")
+		os.Exit(1)
 	}
 }
 
